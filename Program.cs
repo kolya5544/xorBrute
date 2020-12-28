@@ -122,7 +122,7 @@ namespace XorBrute {
 			double threshold = double.Parse(Console.ReadLine());
 			Console.WriteLine("Do you want us to use wordlist to increase accuracy of key guesses? It is slower, but not using it may lead to incorrect, but similar keys. (Y/n)");
 			Console.Write(">");
-			bool useWList = Console.ReadLine().ToLower() == "y";
+			bool useWList = Console.ReadLine().ToLower() != "n";
 			Console.WriteLine("Preparing for brute...");
 			Stopwatch stopWatch = new Stopwatch();
 			stopWatch.Start();
