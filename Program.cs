@@ -52,11 +52,14 @@ namespace XorBrute {
 
         	return result;
         }
+
+        public static KeyValuePair<byte[], double> CurrentBest = new KeyValuePair<byte[], double>();
+
         public static char[] Az09Alphabet = new char[] {'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
     'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
 '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
 		
-		public static void CheckPassword(string currPass, byte[] encCont){
+		public static void CheckPassword(string currPass, byte[] encCont, bool useWords, double threshold){
 			byte[] key = Encoding.UTF8.GetBytes(currPass);
 			byte[] output = new byte[encCont.Length];
 			int totalAlphaNum = 0;
@@ -71,7 +74,7 @@ namespace XorBrute {
 			}
 
 			double confidence = ((double)totalAlphaNum / output.Length) * 100;
-			if (confidence > 75){
+			if (useWords && confidence > 75){
 				string result = Encoding.UTF8.GetString(output);
 				string[] words = result.Split(' ');
 
@@ -87,7 +90,7 @@ namespace XorBrute {
 			if (confidence >= CurrentBest.Value){
 				CurrentBest = new KeyValuePair<byte[], double>(key, confidence);
 			}
-			if (confidence >= 110){
+			if (confidence >= 120){
 				Console.WriteLine("High confidence key : "+currPass + " | "+(Math.Round(confidence, 2)+" units"));
 			}
 		}
@@ -114,13 +117,16 @@ namespace XorBrute {
 			Console.WriteLine("Enter the maximal length of the key");
 			Console.Write(">");
 			int maxLen = int.Parse(Console.ReadLine());
-			Console.WriteLine("Enter the A-z threshold for key testing (in percents. Around 85 is fine. Usually >150 is the real key)");
+			Console.WriteLine("Enter the A-z threshold for key testing (Around 85 is fine. Usually >150 confidence is for the real key)");
 			Console.Write(">");
 			double threshold = double.Parse(Console.ReadLine());
+			Console.WriteLine("Do you want us to use wordlist to increase accuracy of key guesses? It is slower, but not using it may lead to incorrect, but similar keys. (Y/n)");
+			Console.Write(">");
+			bool useWList = Console.ReadLine().ToLower() == "y";
 			Console.WriteLine("Preparing for brute...");
 			Stopwatch stopWatch = new Stopwatch();
 			stopWatch.Start();
-			KeyValuePair<byte[], double> CurrentBest = new KeyValuePair<byte[], double>();
+			
 			bool flagdone = false;
 			new Thread(() =>
 			{
@@ -149,7 +155,7 @@ namespace XorBrute {
 
 					string currPass = basePass(o, mode);
 					
-					CheckPassword(currPass, encCont);
+					CheckPassword(currPass, encCont, useWList, threshold);
 				}
 			}
 			flagdone = true;
