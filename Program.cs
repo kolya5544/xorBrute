@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Text;
 using System.Diagnostics;
 using System.IO;
+using System.Threading;
 
 namespace XorBrute {
 	class Program {
@@ -54,6 +55,42 @@ namespace XorBrute {
         public static char[] Az09Alphabet = new char[] {'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
     'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
 '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
+		
+		public static void CheckPassword(string currPass, byte[] encCont){
+			byte[] key = Encoding.UTF8.GetBytes(currPass);
+			byte[] output = new byte[encCont.Length];
+			int totalAlphaNum = 0;
+			for (int a = 0; a<output.Length; a++){
+				output[a] = (byte)(encCont[a] ^ key[a % key.Length]);
+				if ((output[a] >= 0x41 && output[a] <= 0x5a) ||
+					(output[a] >= 0x61 && output[a] <= 0x7a) ||
+					(output[a] == 0x20 || output[a] == 0x21 ||
+					output[a] == 0x22 || output[a] == 0x27 || output[a] == 0x3f)){
+					totalAlphaNum++;
+				}
+			}
+
+			double confidence = ((double)totalAlphaNum / output.Length) * 100;
+			if (confidence > 75){
+				string result = Encoding.UTF8.GetString(output);
+				string[] words = result.Split(' ');
+
+				for (int z = 0; z<words.Length; z++){
+					if (commonWords.Contains(words[z])){
+						confidence += 25;
+					}
+				}
+			}
+			if (confidence >= threshold){
+				HighConfidence.Add(key, confidence);
+			}
+			if (confidence >= CurrentBest.Value){
+				CurrentBest = new KeyValuePair<byte[], double>(key, confidence);
+			}
+			if (confidence >= 110){
+				Console.WriteLine("High confidence key : "+currPass + " | "+(Math.Round(confidence, 2)+" units"));
+			}
+		}
 
 		public static void Main(string[] args){
 			Console.WriteLine("Preparing the wordlist...");
@@ -74,13 +111,32 @@ namespace XorBrute {
 			Console.WriteLine("2. A-z 0-9");
 			Console.Write(">");
 			bool mode = Console.ReadLine() == "2";
-			Console.WriteLine("Enter the maximal length of the key:");
+			Console.WriteLine("Enter the maximal length of the key");
+			Console.Write(">");
 			int maxLen = int.Parse(Console.ReadLine());
-			Console.WriteLine("Enter the A-z threshold for key testing (in percents. Around 0,75 is fine):");;
+			Console.WriteLine("Enter the A-z threshold for key testing (in percents. Around 85 is fine. Usually >150 is the real key)");
+			Console.Write(">");
 			double threshold = double.Parse(Console.ReadLine());
 			Console.WriteLine("Preparing for brute...");
 			Stopwatch stopWatch = new Stopwatch();
 			stopWatch.Start();
+			KeyValuePair<byte[], double> CurrentBest = new KeyValuePair<byte[], double>();
+			bool flagdone = false;
+			new Thread(() =>
+			{
+					Thread.CurrentThread.IsBackground = true;
+					Thread.Sleep(500);
+					while (!flagdone){
+						if (HighConfidence.Count == 0) {
+							Thread.Sleep(500); continue;
+						}
+						Console.ForegroundColor = ConsoleColor.DarkGreen;
+						Console.WriteLine("Current best guess : "+CurrentBest.Value+" confidence. "+Encoding.UTF8.GetString(CurrentBest.Key));
+						Console.ResetColor();
+						Thread.Sleep(2000);
+					}
+			}).Start();
+
 			for (int i = 1; i<=maxLen; i++){
 				long amountOfCombinations = 0;
 				if (mode) {
@@ -89,54 +145,15 @@ namespace XorBrute {
 					amountOfCombinations = (long)Math.Round(Math.Pow(Az09Alphabet.Length-10, i));
 				}
 				Console.WriteLine("Bruteforcing for "+i+" characters... Approx. "+amountOfCombinations+" combinations.");
-				for (int o = 0; o<amountOfCombinations; o++){
+				for (int o = i != 1 ? (int)Math.Round(Math.Pow(Az09Alphabet.Length, i-1)) : 0; o<amountOfCombinations; o++){
+
 					string currPass = basePass(o, mode);
 					
-					byte[] key = Encoding.UTF8.GetBytes(currPass);
-					byte[] output = new byte[encCont.Length];
-					int totalAlphaNum = 0;
-					for (int a = 0; a<output.Length; a++){
-						output[a] = (byte)(encCont[a] ^ key[a % key.Length]);
-
-						if ((output[a] >= 0x41 && output[a] <= 0x5a) ||
-							(output[a] >= 0x61 && output[a] <= 0x7a) ||
-							(output[a] == 0x20 || output[a] == 0x21 ||
-							output[a] == 0x22 || output[a] == 0x27 || output[a] == 0x3f)){
-							totalAlphaNum++;
-						}
-					}
-
-					double confidence = (double)totalAlphaNum / output.Length;
-					if (confidence >= threshold){
-						HighConfidence.Add(key, threshold);
-					}
-					if (confidence >= 0.90){
-						Console.WriteLine("High confidence key : "+currPass + " | "+(Math.Round(confidence*100, 2)+"%"));
-					}
+					CheckPassword(currPass, encCont);
 				}
 			}
+			flagdone = true;
 			Console.WriteLine("Bruteforce is done. Found "+HighConfidence.Count+" good entries!");
-			Console.WriteLine("Filtering started...");
-
-			foreach (var kvp in HighConfidence.ToArray()){
-				byte[] key = kvp.Key;
-				string keyStr = Encoding.UTF8.GetString(key);
-
-				string result = "";
-				for (int a = 0; a<encCont.Length; a++){
-					result += (char)(encCont[a] ^ key[a % key.Length]);
-				}
-
-				string[] words = result.Split(' ');
-
-				for (int i = 0; i<words.Length; i++){
-					if (commonWords.Contains(words[i])){
-						HighConfidence[kvp.Key] += 0.25;
-					}
-				}
-			}
-
-			Console.WriteLine("Filtering is done!");
 			Console.WriteLine("Sorting...");
 
 			var resultConf = HighConfidence.OrderBy(obj => obj.Value).ToArray().Reverse().ToDictionary(x => x.Key, x => x.Value);
@@ -174,7 +191,7 @@ namespace XorBrute {
 					FileStream fs = File.Create("output.txt");
 					for (int i = 0; i<resArray.Length; i++){
 						
-						if (resArray[i].Value < threshold) continue;
+						if (resArray[i].Value < conf) continue;
 
 						AddText(fs, i+":"+Encoding.UTF8.GetString(resArray[i].Key)+":"+resArray[i].Value+":");
 						string resEnc = "";
