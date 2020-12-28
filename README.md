@@ -57,12 +57,14 @@ Time taken: 20,7882216 seconds.
 
 Real key: `lol`
 
-Message decryption: ```
+Message decryption: 
+```
 ------------
 KEY: lol
 Confidence: 2,4
 Result: A totally usual text encrypted with XOR using a pretty damn cool key
-------------```
+------------
+```
 
 # Tips
 
