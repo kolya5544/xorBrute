@@ -21,7 +21,7 @@ namespace XorBrute {
             return BitConverter.ToString(ba).Replace("-", "");
         }
 
-        public static Dictionary<byte[], double> HighConfidence = new Dictionary<byte[], double>();
+        public static List<Dictionary<byte[], double>> AllConfidences = new List<Dictionary<byte[], double>>();
 
         public static string[] commonWords = File.ReadAllLines("wordlist.txt");
 
@@ -59,7 +59,7 @@ namespace XorBrute {
     'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
 '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
 		
-		public static void CheckPassword(string currPass, byte[] encCont, bool useWords, double threshold){
+		public static double CheckPassword(string currPass, byte[] encCont, bool useWords, double threshold, ref Dictionary<byte[], double> confidenceList){
 			byte[] key = Encoding.UTF8.GetBytes(currPass);
 			byte[] output = new byte[encCont.Length];
 			int totalAlphaNum = 0;
@@ -73,6 +73,8 @@ namespace XorBrute {
 				}
 			}
 
+			//Console.WriteLine(currPass);
+
 			double confidence = ((double)totalAlphaNum / output.Length) * 100;
 			if (useWords && confidence > 75){
 				string result = Encoding.UTF8.GetString(output);
@@ -85,14 +87,15 @@ namespace XorBrute {
 				}
 			}
 			if (confidence >= threshold){
-				HighConfidence.Add(key, confidence);
+				confidenceList.Add(key, confidence);
 			}
-			if (confidence >= CurrentBest.Value){
+			/*if (confidence >= CurrentBest.Value){
 				CurrentBest = new KeyValuePair<byte[], double>(key, confidence);
-			}
+			}*/
 			if (confidence >= 120){
 				Console.WriteLine("High confidence key : "+currPass + " | "+(Math.Round(confidence, 2)+" units"));
 			}
+			return confidence;
 		}
 
 		public static void Main(string[] args){
@@ -123,6 +126,10 @@ namespace XorBrute {
 			Console.WriteLine("Do you want us to use wordlist to increase accuracy of key guesses? It is slower, but not using it may lead to incorrect, but similar keys. (Y/n)");
 			Console.Write(">");
 			bool useWList = Console.ReadLine().ToLower() != "n";
+			Console.WriteLine("Enter amount of threads to use (4 works fine for dual-cored CPUs)");
+			Console.Write(">");
+			int THREAD_AMOUNT = int.Parse(Console.ReadLine());
+			int THREADS_DONE = 0;
 			Console.WriteLine("Preparing for brute...");
 			Stopwatch stopWatch = new Stopwatch();
 			stopWatch.Start();
@@ -133,36 +140,75 @@ namespace XorBrute {
 					Thread.CurrentThread.IsBackground = true;
 					Thread.Sleep(500);
 					while (!flagdone){
-						if (HighConfidence.Count == 0) {
+						if (CurrentBest.Value == 0) {
 							Thread.Sleep(500); continue;
 						}
 						Console.ForegroundColor = ConsoleColor.DarkGreen;
-						Console.WriteLine("Current best guess : "+CurrentBest.Value+" confidence. "+Encoding.UTF8.GetString(CurrentBest.Key));
+						string date = DateTime.UtcNow.ToString("HH:mm:ss");
+						Console.WriteLine("["+date+"] Current best guess : "+CurrentBest.Value+" confidence. "+Encoding.UTF8.GetString(CurrentBest.Key));
 						Console.ResetColor();
-						Thread.Sleep(2000);
+						Thread.Sleep(500);
 					}
 			}).Start();
 
-			for (int i = 1; i<=maxLen; i++){
-				long amountOfCombinations = 0;
-				if (mode) {
-					amountOfCombinations = (long)Math.Round(Math.Pow(Az09Alphabet.Length, i));
-				} else {
-					amountOfCombinations = (long)Math.Round(Math.Pow(Az09Alphabet.Length-10, i));
-				}
-				Console.WriteLine("Bruteforcing for "+i+" characters... Approx. "+amountOfCombinations+" combinations.");
-				for (int o = i != 1 ? (int)Math.Round(Math.Pow(Az09Alphabet.Length, i-1)) : 0; o<amountOfCombinations; o++){
+			for (int tID = 0; tID<THREAD_AMOUNT; tID++){
+				int lID = tID;
+				new Thread(() => {
+					Thread.CurrentThread.IsBackground = true;
 
-					string currPass = basePass(o, mode);
+					Dictionary<byte[], double> HighConfidence = new Dictionary<byte[], double>();
+
+					double localBest = 0;
+					localBest = CurrentBest.Value;
+
+					AllConfidences.Add(HighConfidence);
+
+					long amountOfCombinations = 0;
+					if (mode) {
+						amountOfCombinations = (long)Math.Round(Math.Pow(Az09Alphabet.Length, maxLen));
+					} else {
+						amountOfCombinations = (long)Math.Round(Math.Pow(Az09Alphabet.Length-10, maxLen));
+					}
+					Console.WriteLine("Bruteforcing for "+maxLen+" characters... Approx. "+(amountOfCombinations/THREAD_AMOUNT)+" combinations.");
+					//int searchFrom = i != 1 ? (int)Math.Round(Math.Pow(Az09Alphabet.Length, i-1)) : 0;
+					int searchFrom = (int)(lID * (amountOfCombinations / THREAD_AMOUNT));
+					int searchTo = (int)(searchFrom + (amountOfCombinations/THREAD_AMOUNT));
+					Console.WriteLine("Thr"+lID+" : from "+searchFrom+" to "+searchTo);
+					for (int o = searchFrom; o<searchTo; o++){
+
+						string currPass = basePass(o, mode);
 					
-					CheckPassword(currPass, encCont, useWList, threshold);
+						double conf = CheckPassword(currPass, encCont, useWList, threshold, ref HighConfidence);
+						if (conf > localBest){
+							if (conf > CurrentBest.Value){
+								CurrentBest = new KeyValuePair<byte[], double>(Encoding.UTF8.GetBytes(currPass), conf);
+							}
+							localBest = CurrentBest.Value;
+						}
+					}
+					THREADS_DONE++;
+				}).Start();
+			}
+
+			while (true){
+				if (THREADS_DONE == THREAD_AMOUNT){
+					break;
+				}
+				Thread.Sleep(500);
+			}
+			
+			flagdone = true;
+			Console.WriteLine("Bruteforce is done. Combining entries.");
+			Dictionary<byte[], double> finalEntries = new Dictionary<byte[], double>();
+			foreach (Dictionary<byte[], double> dict in AllConfidences){
+				foreach (KeyValuePair<byte[], double> kvp in dict){
+					finalEntries.Add(kvp.Key, kvp.Value);
 				}
 			}
-			flagdone = true;
-			Console.WriteLine("Bruteforce is done. Found "+HighConfidence.Count+" good entries!");
+			Console.WriteLine("Done! Found "+finalEntries.Count+" entries!");
 			Console.WriteLine("Sorting...");
 
-			var resultConf = HighConfidence.OrderBy(obj => obj.Value).ToArray().Reverse().ToDictionary(x => x.Key, x => x.Value);
+			var resultConf = finalEntries.OrderBy(obj => obj.Value).ToArray().Reverse().ToDictionary(x => x.Key, x => x.Value);
 
 			var resArray = resultConf.ToArray();
 
