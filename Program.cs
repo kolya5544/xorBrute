@@ -126,7 +126,7 @@ namespace XorBrute {
 			Console.WriteLine("Do you want us to use wordlist to increase accuracy of key guesses? It is slower, but not using it may lead to incorrect, but similar keys. (Y/n)");
 			Console.Write(">");
 			bool useWList = Console.ReadLine().ToLower() != "n";
-			Console.WriteLine("Enter amount of threads to use (4 works fine for dual-cored CPUs, 16 for high-end PCsЫ)");
+			Console.WriteLine("Enter amount of threads to use (4 works fine for dual-cored CPUs, 16 for high-end PCs)");
 			Console.Write(">");
 			int THREAD_AMOUNT = int.Parse(Console.ReadLine());
 			int THREADS_DONE = 0;
